@@ -13,9 +13,11 @@ import urllib2
 import urlparse
 import sqlite3 as sqlite
 import threading
+import logging
 from BeautifulSoup import BeautifulSoup
 
 __author__ = "Sergio Bernales"
+logging.basicConfig(level=logging.DEBUG)
 
 if len(sys.argv) < 2:
     sys.exit("Not Enough arguments!");
@@ -34,6 +36,7 @@ cursor.execute('CREATE TABLE IF NOT EXISTS app_permissions (id INTEGER PRIMARY K
 #cursor.execute('CREATE TABLE IF NOT EXISTS urls_to_crawl (category VARCHAR(256), url VARCHAR(256))')
 
 connection.commit()
+connection.close()
 
 class MarketCrawler(threading.Thread):
     mainURL = "https://market.android.com"
@@ -48,6 +51,7 @@ class MarketCrawler(threading.Thread):
     crawl process
     """
     def run(self):
+        logging.debug("Running new crawler thread")
         for cat in categories:
             print cat
             self.crawlAppsForCategory(cat)
@@ -55,7 +59,10 @@ class MarketCrawler(threading.Thread):
     def crawlAppsForCategory(self, cat):
         pageIndex = 0
         curl = self.topfreeURL + cat + "&start="
+        logging.debug("curl:" + curl);
         currentURL = curl + str(pageIndex)
+        logging.debug("current URL:" + currentURL);
+        
 
         while True:
             try:
@@ -65,9 +72,12 @@ class MarketCrawler(threading.Thread):
                 content = handle.open(request).read()
                 soup = BeautifulSoup(content)
 
-                print "Currently on page " + pageIndex + " of the list of app for this Category"
                 appURLS = self.extractAppUrls(soup)
-                self.extractPermissionsIntoDB(appURLS, cat)
+                
+                extractor = PermissionExtractor(appURLS, cat)
+                extractor.start()
+                logging.debug("Running thread")
+                #self.extractPermissionsIntoDB(appURLS, cat)
 
                 pageIndex+=24
                 currentURL = curl + str(pageIndex)
@@ -111,10 +121,19 @@ class MarketCrawler(threading.Thread):
     Fetch all the URLS in appURLS and extract the permissions.
     Put these permission into the DB
     """
-    def extractPermissionsIntoDB(self, appURLS, cat):
+class PermissionExtractor(threading.Thread):
+    def __init__(self, appURLS, cat):
+        threading.Thread.__init__(self)
+        self.sites = appURLS
+        self.category = cat
+        logging.debug("Created PermissionExtractor")
+    
+    def run(self):
+        self.conn = sqlite.connect(dbfilename)
+        self.curs = self.conn.cursor()
         #we can put this URL stuff into its own object /code repetition
-        for url in appURLS:
-            request = urllib2.Request(url)
+        for site in self.sites:
+            request = urllib2.Request(site)
             request.add_header("User-Agent", "PyCrawler")
             handle = urllib2.build_opener()
             content = handle.open(request).read()
@@ -122,18 +141,20 @@ class MarketCrawler(threading.Thread):
             
             appName = soup.find('h1','doc-banner-title').contents[0]
             permissions = soup.findAll('div','doc-permission-description')
-            self.pushToDB(appName, cat, permissions, url)
+            self.pushToDB(appName, permissions, site)
     
     """
     Pushes permissions of a certain app into the DB
     cursor.execute('CREATE TABLE IF NOT EXISTS app_permissions (id INTEGER, appname VARCHAR(256), category VARCHAR(256), permission VARCHAR(256), url VARCHAR(256))')
     """
-    def pushToDB(self, appName, cat, permissions, url):
+    def pushToDB(self, appName, permissions, site):
+        logging.debug("Pushing to DB app: " + appName)
         for p in permissions:
             #print appName, cat, p.contents[0], url 
-            cursor.execute("INSERT INTO app_permissions VALUES ((?), (?), (?), (?), (?))", (None, appName, cat, p.contents[0], url ) )
-            connection.commit()
+            self.curs.execute("INSERT INTO app_permissions VALUES ((?), (?), (?), (?), (?))", (None, appName, self.category, p.contents[0], site ) )
+            self.conn.commit()
 
 if __name__ == "__main__":
+    logging.debug("Started!")
     #run the crawler thread
     MarketCrawler().run()
