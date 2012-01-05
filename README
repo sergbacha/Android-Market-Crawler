@@ -1,0 +1,5 @@
+A simple web crawler. Specifically for the Android Market to retrieve ever permissions for every app.
+
+The latest version is multi-thread enabled but too many threads! I need a pool.
+
+The first version is probablya more stable version. There is not multi-threading but it will getter done.
