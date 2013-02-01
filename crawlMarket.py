@@ -3,8 +3,10 @@
 """
 Google Android Market Crawler
 For the sake of research
-1) database file name
-2 through n) all the types we want to explore
+
+Args:
+1: database file name
+2 through n: all the types we want to explore
 """
 
 import sys
